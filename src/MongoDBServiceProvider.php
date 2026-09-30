@@ -58,6 +58,7 @@ class MongoDBServiceProvider extends ServiceProvider
             $this->commands([
                 Commands\Encrypted\CreateEncryptedCommand::class,
                 Commands\Encrypted\DiagnoseEncryptedCommand::class,
+                Commands\Encrypted\RewrapDataKeysCommand::class,
             ]);
         }
     }
