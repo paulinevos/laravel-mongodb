@@ -16,6 +16,7 @@ use MongoDB\Laravel\Tests\Models\Skill;
 use MongoDB\Laravel\Tests\Models\SqlBook;
 use MongoDB\Laravel\Tests\Models\SqlRole;
 use MongoDB\Laravel\Tests\Models\SqlUser;
+use MongoDB\Laravel\Tests\Models\Studio;
 use MongoDB\Laravel\Tests\Models\User;
 use PDOException;
 
@@ -285,6 +286,30 @@ class HybridRelationsTest extends TestCase
         SqlUser::whereHas('skills', function ($query) {
             return $query->where('name', 'LIKE', 'MongoDB');
         });
+    }
+
+    public function testThroughRelationCrossingConnectionsFails()
+    {
+        $studio = new Studio();
+
+        // MongoModel -> HasManyThrough -> MongoModel -> SqlModel
+        try {
+            $studio->sqlRolesThroughDirectors();
+            self::fail('Expected a LogicException');
+        } catch (LogicException $e) {
+            self::assertSame(
+                'Through relations cannot cross database connections: the related model [MongoDB\Laravel\Tests\Models\SqlRole] and the through model [MongoDB\Laravel\Tests\Models\Director] must both be stored in MongoDB, or neither.',
+                $e->getMessage(),
+            );
+        }
+
+        // MongoModel -> HasManyThrough -> SqlModel -> MongoModel
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage(
+            'Through relations cannot cross database connections: the related model [MongoDB\Laravel\Tests\Models\Film] and the through model [MongoDB\Laravel\Tests\Models\SqlUser] must both be stored in MongoDB, or neither.',
+        );
+
+        $studio->filmsThroughSqlUsers();
     }
 
     public function testWithCountOnHybridRelationFails()

@@ -7,6 +7,7 @@ namespace MongoDB\Laravel\Eloquent;
 use Illuminate\Database\Eloquent\Concerns\HasRelationships;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Support\Str;
+use LogicException;
 use MongoDB\Laravel\Helpers\EloquentBuilder;
 use MongoDB\Laravel\Relations\BelongsTo;
 use MongoDB\Laravel\Relations\BelongsToMany;
@@ -23,6 +24,7 @@ use function array_pop;
 use function debug_backtrace;
 use function implode;
 use function preg_split;
+use function sprintf;
 
 use const DEBUG_BACKTRACE_IGNORE_ARGS;
 use const PREG_SPLIT_DELIM_CAPTURE;
@@ -141,7 +143,7 @@ trait HybridRelations
      */
     public function hasOneThrough($related, $through, $firstKey = null, $secondKey = null, $localKey = null, $secondLocalKey = null)
     {
-        if (! Model::isDocumentModel($related)) {
+        if (! self::isThroughChainStoredInMongoDB($related, $through)) {
             return parent::hasOneThrough($related, $through, $firstKey, $secondKey, $localKey, $secondLocalKey);
         }
 
@@ -178,7 +180,7 @@ trait HybridRelations
      */
     public function hasManyThrough($related, $through, $firstKey = null, $secondKey = null, $localKey = null, $secondLocalKey = null)
     {
-        if (! Model::isDocumentModel($related)) {
+        if (! self::isThroughChainStoredInMongoDB($related, $through)) {
             return parent::hasManyThrough($related, $through, $firstKey, $secondKey, $localKey, $secondLocalKey);
         }
 
@@ -194,6 +196,25 @@ trait HybridRelations
             $localKey ?: $this->getKeyName(),
             $secondLocalKey ?: $throughInstance->getKeyName(),
         );
+    }
+
+    /**
+     * @param class-string $related
+     * @param class-string $through
+     */
+    private static function isThroughChainStoredInMongoDB(string $related, string $through): bool
+    {
+        $relatedIsDocument = Model::isDocumentModel($related);
+
+        if ($relatedIsDocument === Model::isDocumentModel($through)) {
+            return $relatedIsDocument;
+        }
+
+        throw new LogicException(sprintf(
+            'Through relations cannot cross database connections: the related model [%s] and the through model [%s] must both be stored in MongoDB, or neither.',
+            $related,
+            $through,
+        ));
     }
 
     /**

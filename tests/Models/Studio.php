@@ -62,4 +62,14 @@ class Studio extends Model
             'cdirector_id',
         );
     }
+
+    public function sqlRolesThroughDirectors(): HasManyThrough
+    {
+        return $this->hasManyThrough(SqlRole::class, Director::class);
+    }
+
+    public function filmsThroughSqlUsers(): HasManyThrough
+    {
+        return $this->hasManyThrough(Film::class, SqlUser::class);
+    }
 }
