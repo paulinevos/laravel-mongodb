@@ -245,6 +245,26 @@ class ThroughRelationsTest extends TestCase
         self::assertSame(['A24', 'Neon'], Studio::has('filmsWithCustomKeys')->orderBy('name')->pluck('name')->all());
     }
 
+    public function testSoftDeletedThroughParentHidesItsRelatedDocuments(): void
+    {
+        $studio = Studio::create(['name' => 'A24']);
+        $aster = $studio->directors()->create(['name' => 'Ari Aster']);
+        $aster->films()->create(['title' => 'Hereditary']);
+        $studio->directors()->create(['name' => 'Robert Eggers'])->films()->create(['title' => 'The Lighthouse']);
+
+        $aster->delete();
+
+        self::assertTrue($studio->films()->throughParentSoftDeletes());
+        self::assertSame(['The Lighthouse'], $studio->films()->pluck('title')->all());
+        self::assertSame(
+            ['Hereditary', 'The Lighthouse'],
+            $studio->filmsWithTrashedDirectors()->pluck('title')->sort()->values()->all(),
+        );
+
+        self::assertSame(1, Studio::withCount('films')->first()->films_count);
+        self::assertSame(2, Studio::withCount('filmsWithTrashedDirectors')->first()->films_with_trashed_directors_count);
+    }
+
     /** @return array<string, Studio> */
     private function createStudios(): array
     {

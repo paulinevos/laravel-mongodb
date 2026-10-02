@@ -7,6 +7,7 @@ namespace MongoDB\Laravel\Relations;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 use MongoDB\BSON\Binary;
@@ -34,7 +35,12 @@ trait ResolvesThroughKeys
     /** @var array<string, string> */
     private array $farParentKeyByThroughKey = [];
 
+    /** @var list<mixed>|null */
+    private ?array $resolvedFarParentKeys = null;
+
     private int|string|null $throughKeyWhereIndex = null;
+
+    private bool $keepTrashedParents = false;
 
     /** @inheritdoc */
     #[Override]
@@ -52,6 +58,19 @@ trait ResolvesThroughKeys
     public function addEagerConstraints(array $models)
     {
         $this->constrainByFarParentKeys($this->getKeys($models, $this->localKey));
+    }
+
+    /** @inheritdoc */
+    #[Override]
+    public function withTrashedParents()
+    {
+        $this->keepTrashedParents = true;
+
+        if ($this->resolvedFarParentKeys !== null) {
+            $this->constrainByFarParentKeys($this->resolvedFarParentKeys);
+        }
+
+        return $this;
     }
 
     /** @inheritdoc */
@@ -132,6 +151,8 @@ trait ResolvesThroughKeys
     /** @param list<mixed> $farParentKeys */
     private function constrainByFarParentKeys(array $farParentKeys): void
     {
+        $this->resolvedFarParentKeys = $farParentKeys;
+
         $throughParents = $this->readThroughParents($this->firstKey, $farParentKeys);
 
         $this->farParentKeyByThroughKey = $this->indexFarParentKeys($throughParents);
@@ -186,7 +207,13 @@ trait ResolvesThroughKeys
     /** @return Builder */
     private function newThroughQuery()
     {
-        return $this->throughParent->newQuery()->select([$this->secondLocalKey, $this->firstKey]);
+        $query = $this->throughParent->newQuery();
+
+        if ($this->keepTrashedParents) {
+            $query->withoutGlobalScope(SoftDeletingScope::class);
+        }
+
+        return $query->select([$this->secondLocalKey, $this->firstKey]);
     }
 
     /** @return array<string, string> */
