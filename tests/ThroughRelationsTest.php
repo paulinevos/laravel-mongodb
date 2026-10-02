@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MongoDB\Laravel\Tests;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use MongoDB\Laravel\Relations\HasManyThrough;
@@ -84,6 +85,35 @@ class ThroughRelationsTest extends TestCase
 
         self::assertInstanceOf(HasOneThrough::class, $relation);
         self::assertSame('Hereditary', $relation->getResults()->title);
+    }
+
+    public function testHas(): void
+    {
+        $this->createStudios();
+
+        self::assertSame(['A24', 'Blumhouse'], Studio::has('films')->orderBy('name')->pluck('name')->all());
+        self::assertSame(['Neon'], Studio::doesntHave('films')->pluck('name')->all());
+        self::assertSame(['A24'], Studio::has('films', '>', 1)->pluck('name')->all());
+        self::assertSame(['A24', 'Blumhouse'], Studio::has('firstFilm')->orderBy('name')->pluck('name')->all());
+    }
+
+    public function testWhereHas(): void
+    {
+        $this->createStudios();
+
+        $studios = Studio::whereHas('films', static fn (Builder $query) => $query->where('title', 'Get Out'))->get();
+
+        self::assertSame(['Blumhouse'], $studios->pluck('name')->all());
+    }
+
+    public function testNestedHas(): void
+    {
+        $this->createStudios();
+
+        self::assertSame(
+            ['A24', 'Blumhouse'],
+            Studio::has('directors.films')->orderBy('name')->pluck('name')->all(),
+        );
     }
 
     public function testConstraintsOnTheRelatedQuery(): void
@@ -170,6 +200,8 @@ class ThroughRelationsTest extends TestCase
         $loaded = Studio::with('filmsWithCustomKeys')->orderBy('name')->get();
         self::assertCount(2, $loaded[0]->filmsWithCustomKeys);
         self::assertSame(['Get Out'], $loaded[1]->filmsWithCustomKeys->pluck('title')->all());
+
+        self::assertSame(['A24', 'Neon'], Studio::has('filmsWithCustomKeys')->orderBy('name')->pluck('name')->all());
     }
 
     /** @return array<string, Studio> */

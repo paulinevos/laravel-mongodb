@@ -15,6 +15,7 @@ use Illuminate\Support\Collection;
 use LogicException;
 use MongoDB\Laravel\Eloquent\Model;
 use MongoDB\Laravel\Relations\MorphToMany;
+use MongoDB\Laravel\Relations\ThroughRelation;
 
 use function array_count_values;
 use function array_filter;
@@ -123,6 +124,7 @@ trait QueriesRelationships
             $relation instanceof MorphToMany => $relation->getInverse() ?
               $this->handleMorphedByMany($hasQuery, $relation) :
               $this->handleMorphToMany($hasQuery, $relation),
+            $relation instanceof ThroughRelation => $relation->pluckFarParentKeys($hasQuery),
             default => $hasQuery->pluck($this->getHasCompareKey($relation))
         };
 
@@ -143,6 +145,7 @@ trait QueriesRelationships
         if (
             $relation instanceof HasOneOrMany
             || $relation instanceof BelongsTo
+            || $relation instanceof ThroughRelation
             || ($relation instanceof BelongsToMany && ! $this->isAcrossConnections($relation))
         ) {
             return;
@@ -238,7 +241,7 @@ trait QueriesRelationships
     {
         $this->assertHybridRelationSupported($relation);
 
-        if ($relation instanceof HasOneOrMany) {
+        if ($relation instanceof HasOneOrMany || $relation instanceof ThroughRelation) {
             return $relation->getLocalKeyName();
         }
 
