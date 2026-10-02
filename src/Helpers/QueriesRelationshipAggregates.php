@@ -18,6 +18,7 @@ use LogicException;
 use MongoDB\BSON\Binary;
 use MongoDB\Laravel\Eloquent\Model as DocumentModel;
 use MongoDB\Laravel\Relations\EmbedsOneOrMany;
+use MongoDB\Laravel\Relations\ThroughRelation;
 use Stringable;
 
 use function bin2hex;
@@ -189,8 +190,9 @@ trait QueriesRelationshipAggregates
         }
 
         // The related documents cannot be grouped by the server: a BelongsTo relation has a single
-        // related document per parent, and the keys of many-to-many relations are stored in an array
-        // field. The eager loading logic is reused to match the related documents to their parent.
+        // related document per parent, the keys of many-to-many relations are stored in an array
+        // field, and a through relation has no key to the far parent on the related collection.
+        // The eager loading logic is reused to match the related documents to their parent.
         $this->hydrateMatchedAggregate($models, $alias, $aggregate, $relation);
     }
 
@@ -302,6 +304,7 @@ trait QueriesRelationshipAggregates
         if (
             $relation instanceof HasOneOrMany
             || $relation instanceof BelongsToMany
+            || $relation instanceof ThroughRelation
             || ($relation instanceof BelongsTo && ! $relation instanceof MorphTo)
         ) {
             return;
@@ -316,7 +319,8 @@ trait QueriesRelationshipAggregates
     private function getAggregateParentKey(Relation $relation): ?string
     {
         return match (true) {
-            $relation instanceof HasOneOrMany => $relation->getLocalKeyName(),
+            $relation instanceof HasOneOrMany,
+            $relation instanceof ThroughRelation => $relation->getLocalKeyName(),
             $relation instanceof BelongsTo => $relation->getForeignKeyName(),
             $relation instanceof BelongsToMany => $relation->getParentKeyName(),
             default => null,
