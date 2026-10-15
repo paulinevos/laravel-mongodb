@@ -115,6 +115,8 @@ class Builder extends BaseBuilder
 
     private ReadPreference $readPreference;
 
+    private ?Pipeline $pipeline = null;
+
     /**
      * Custom options to add to the query.
      *
@@ -224,6 +226,38 @@ class Builder extends BaseBuilder
         return $this;
     }
 
+    /** @param array<string, mixed> $stage */
+    public function addPipelineStage(array $stage): static
+    {
+        $this->pipeline()->addStage($stage);
+
+        return $this;
+    }
+
+    public function unsetTemporaryField(string $field): static
+    {
+        $this->pipeline()->unsetTemporaryField($field);
+
+        return $this;
+    }
+
+    public function __clone()
+    {
+        if ($this->pipeline !== null) {
+            $this->pipeline = clone $this->pipeline;
+        }
+    }
+
+    private function pipeline(): Pipeline
+    {
+        return $this->pipeline ??= new Pipeline();
+    }
+
+    private function assertWritable(): void
+    {
+        $this->pipeline?->assertWritable();
+    }
+
     /** @inheritdoc */
     #[Override]
     public function find($id, $columns = [])
@@ -293,6 +327,14 @@ class Builder extends BaseBuilder
      * @return array<string, mixed[]>
      */
     public function toMql(): array
+    {
+        $command = $this->compileCommand();
+
+        return $this->pipeline === null ? $command : $this->pipeline->applyTo($command);
+    }
+
+    /** @return array<string, mixed[]> */
+    private function compileCommand(): array
     {
         $columns = $this->columns ?? [];
 
@@ -995,6 +1037,7 @@ class Builder extends BaseBuilder
         }
 
         $wheres = $this->compileWheres();
+        $this->assertWritable();
         $wheres = $this->grammar->prepareFieldsForQuery($wheres);
         $options = $this->inheritConnectionOptions();
 
@@ -1200,6 +1243,7 @@ class Builder extends BaseBuilder
         $options = $this->inheritConnectionOptions($options);
 
         $wheres = $this->compileWheres();
+        $this->assertWritable();
         $wheres = $this->grammar->prepareFieldsForQuery($wheres);
         // Queryable Encryption forbids multi-document updates, so encrypted
         // collections must use single-document updates. Unmapped collections
@@ -1539,7 +1583,13 @@ class Builder extends BaseBuilder
 
     protected function compileWhereNested(array $where): mixed
     {
-        return $where['query']->compileWheres();
+        $query = $where['query'];
+
+        if ($query instanceof self) {
+            $this->pipeline()->mergeFrom($query->pipeline());
+        }
+
+        return $query->compileWheres();
     }
 
     protected function compileWhereIn(array $where): array
