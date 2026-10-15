@@ -6,6 +6,7 @@ namespace MongoDB\Laravel\Tests\Eloquent;
 
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use LogicException;
 use MongoDB\Laravel\Tests\Models\Item;
 use MongoDB\Laravel\Tests\Models\User;
 use MongoDB\Laravel\Tests\TestCase;
@@ -145,6 +146,91 @@ class RelationAggregateTest extends TestCase
             ->all();
 
         $this->assertSame(['Alice', 'Bob'], $names);
+    }
+
+    public function testWhereRelationAggregate(): void
+    {
+        $this->seedUsers();
+
+        $names = User::whereRelationAggregate('items', 'amount', 'sum', '>=', 15)
+            ->orderBy('name')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Alice', 'Bob'], $names);
+    }
+
+    public function testWhereRelationAggregateCountsPagesWithTheMatch(): void
+    {
+        $this->seedUsers();
+
+        $query = User::whereRelationAggregate('items', '*', 'count', '<', 2);
+
+        $this->assertSame(['Carol'], $query->orderBy('name')->get()->pluck('name')->all());
+        $this->assertSame(1, $query->count());
+        $this->assertSame(1, $query->paginate()->total());
+    }
+
+    public function testAnEmptyRelationDoesNotMatchASumComparison(): void
+    {
+        $this->seedUsers();
+
+        $names = User::whereRelationAggregate('items', 'amount', 'sum', '<', 100)
+            ->orderBy('name')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Alice', 'Bob'], $names);
+    }
+
+    public function testWhereRelationAggregateComposesInsideAGroup(): void
+    {
+        $this->seedUsers();
+
+        $names = User::where(function ($query): void {
+            $query->whereRelationAggregate('items', 'amount', 'sum', '>=', 15)
+                ->where('name', '!=', 'Bob');
+        })
+            ->orderBy('name')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Alice'], $names);
+    }
+
+    public function testWhereRelationAggregateComposesWithOrWhere(): void
+    {
+        $this->seedUsers();
+
+        $names = User::whereRelationAggregate('items', 'amount', 'sum', '>=', 15)
+            ->orWhere('name', 'Carol')
+            ->orderBy('name')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Alice', 'Bob', 'Carol'], $names);
+    }
+
+    public function testWhereRelationAggregateCannotBeUsedToDelete(): void
+    {
+        $this->seedUsers();
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('A query carrying relationship aggregate stages cannot delete or update documents.');
+
+        User::whereRelationAggregate('items', 'amount', 'sum', '>=', 15)->delete();
+    }
+
+    public function testWhereRelationAggregateUnsupportedOperator(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Comparison operator "~=" is not supported by MongoDB. Supported operators are: =, !=, <>, <, <=, >, >=');
+
+        User::whereRelationAggregate('items', 'amount', 'sum', '~=', 1);
     }
 
     private function seedUsers(): void
