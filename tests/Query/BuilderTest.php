@@ -1899,7 +1899,7 @@ class BuilderTest extends TestCase
                 'aggregate' => [
                     [
                         ['$lookup' => ['from' => 'books', 'as' => '__rel_books']],
-                        ['$project' => ['tags' => ['$slice' => ['$tags', 1]]]],
+                        ['$set' => ['tags' => ['$slice' => ['$tags', 1]]]],
                     ],
                     [],
                 ],

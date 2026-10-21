@@ -130,6 +130,22 @@ class QueryBuilderTest extends TestCase
         $this->assertSame(1, $count);
     }
 
+    public function testPipelineStagesKeepTheOtherFieldsOfASliceProjection()
+    {
+        DB::table('items')->insert([
+            ['name' => 'fork', 'tags' => ['sharp', 'pointy']],
+        ]);
+
+        $item = DB::table('items')
+            ->project(['tags' => ['$slice' => 1]])
+            ->addPipelineStage(['$addFields' => ['__flag' => true]])
+            ->get()
+            ->first();
+
+        $this->assertSame('fork', $item->name);
+        $this->assertSame(['sharp'], $item->tags);
+    }
+
     public function testNoDocument()
     {
         $items = DB::table('items')->where('name', 'nothing')->get()->toArray();

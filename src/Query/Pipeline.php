@@ -327,9 +327,27 @@ final class Pipeline
      */
     private function projectionStage(array $options): array
     {
-        return isset($options['projection']) && is_array($options['projection'])
-            ? [['$project' => Projection::translate($options['projection'])]]
-            : [];
+        $projection = $options['projection'] ?? null;
+
+        if (! is_array($projection)) {
+            return [];
+        }
+
+        $stage = $this->onlySlicesFields($projection) ? '$set' : '$project';
+
+        return [[$stage => Projection::translate($projection)]];
+    }
+
+    /** @param array<string, mixed> $projection */
+    private function onlySlicesFields(array $projection): bool
+    {
+        foreach ($projection as $specification) {
+            if (! is_array($specification) || ! isset($specification['$slice'])) {
+                return false;
+            }
+        }
+
+        return $projection !== [];
     }
 
     /** @return list<array<string, mixed>> */
