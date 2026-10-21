@@ -253,9 +253,54 @@ class Builder extends BaseBuilder
         return $this->pipeline ??= new Pipeline();
     }
 
+    private function effectivePipeline(): ?Pipeline
+    {
+        $pipeline = $this->pipeline === null ? null : clone $this->pipeline;
+
+        foreach ($this->nestedQueries() as $query) {
+            $pipeline = $this->mergeNestedPipeline($pipeline, $query);
+        }
+
+        return $pipeline;
+    }
+
+    private function mergeNestedPipeline(?Pipeline $pipeline, self $query): ?Pipeline
+    {
+        $nested = $query->effectivePipeline();
+
+        if ($nested === null) {
+            return $pipeline;
+        }
+
+        $pipeline ??= new Pipeline();
+        $pipeline->mergeFrom($nested);
+
+        return $pipeline;
+    }
+
+    /** @return list<self> */
+    private function nestedQueries(): array
+    {
+        $queries = [];
+
+        foreach ($this->wheres as $where) {
+            if ($this->isNestedQuery($where)) {
+                $queries[] = $where['query'];
+            }
+        }
+
+        return $queries;
+    }
+
+    /** @param array<string, mixed> $where */
+    private function isNestedQuery(array $where): bool
+    {
+        return ($where['type'] ?? null) === 'Nested' && ($where['query'] ?? null) instanceof self;
+    }
+
     private function assertWritable(): void
     {
-        $this->pipeline?->assertWritable();
+        $this->effectivePipeline()?->assertWritable();
     }
 
     /** @inheritdoc */
@@ -328,9 +373,10 @@ class Builder extends BaseBuilder
      */
     public function toMql(): array
     {
+        $pipeline = $this->effectivePipeline();
         $command = $this->compileCommand();
 
-        return $this->pipeline === null ? $command : $this->pipeline->applyTo($command);
+        return $pipeline === null ? $command : $pipeline->applyTo($command);
     }
 
     /** @return array<string, mixed[]> */
@@ -1583,13 +1629,7 @@ class Builder extends BaseBuilder
 
     protected function compileWhereNested(array $where): mixed
     {
-        $query = $where['query'];
-
-        if ($query instanceof self) {
-            $this->pipeline()->mergeFrom($query->pipeline());
-        }
-
-        return $query->compileWheres();
+        return $where['query']->compileWheres();
     }
 
     protected function compileWhereIn(array $where): array

@@ -175,13 +175,9 @@ final class Pipeline
             return [[], []];
         }
 
-        if (! isset($filter['$and']) || ! is_array($filter['$and'])) {
-            return $this->referencesTemporaryField($filter) ? [[], $filter] : [$filter, []];
-        }
-
         $before = [];
         $after = [];
-        foreach ($filter['$and'] as $condition) {
+        foreach ($this->conjuncts($filter) as $condition) {
             if ($this->referencesTemporaryField($condition)) {
                 $after[] = $condition;
                 continue;
@@ -191,6 +187,39 @@ final class Pipeline
         }
 
         return [$this->combine($before), $this->combine($after)];
+    }
+
+    /**
+     * @param array<array-key, mixed> $filter
+     *
+     * @return list<array<array-key, mixed>>
+     */
+    private function conjuncts(array $filter): array
+    {
+        if (! isset($filter['$and']) || ! is_array($filter['$and'])) {
+            return [$filter];
+        }
+
+        $siblings = $filter;
+        unset($siblings['$and']);
+
+        return [...$this->rootConditions($siblings), ...array_values($filter['$and'])];
+    }
+
+    /**
+     * @param array<array-key, mixed> $siblings
+     *
+     * @return list<array<array-key, mixed>>
+     */
+    private function rootConditions(array $siblings): array
+    {
+        $conditions = [];
+
+        foreach ($siblings as $key => $value) {
+            $conditions[] = [$key => $value];
+        }
+
+        return $conditions;
     }
 
     /**

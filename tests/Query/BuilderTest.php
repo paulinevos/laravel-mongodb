@@ -1813,6 +1813,52 @@ class BuilderTest extends TestCase
             },
         ];
 
+        yield 'pipeline stages of a doubly nested query are hoisted' => [
+            [
+                'aggregate' => [
+                    [
+                        ['$match' => ['active' => true]],
+                        ['$lookup' => ['from' => 'books', 'as' => '__rel_books']],
+                    ],
+                    [],
+                ],
+            ],
+            function (Builder $builder) {
+                $builder->where(function (Builder $outer): void {
+                    $outer->where(function (Builder $inner): void {
+                        $inner->where('active', true)
+                            ->addPipelineStage(['$lookup' => ['from' => 'books', 'as' => '__rel_books']]);
+                    });
+                });
+
+                return $builder;
+            },
+        ];
+
+        yield 'pipeline keeps the siblings of an $and filter' => [
+            [
+                'aggregate' => [
+                    [
+                        [
+                            '$match' => [
+                                '$and' => [
+                                    ['$or' => [['name' => 'foo'], ['name' => 'bar']]],
+                                    ['active' => true],
+                                ],
+                            ],
+                        ],
+                        ['$lookup' => ['from' => 'books', 'as' => '__rel_books']],
+                    ],
+                    [],
+                ],
+            ],
+            fn (Builder $builder) => $builder
+                ->where('name', 'foo')
+                ->orWhere('name', 'bar')
+                ->where('active', true)
+                ->addPipelineStage(['$lookup' => ['from' => 'books', 'as' => '__rel_books']]),
+        ];
+
         yield 'pipeline count applies the paging options' => [
             [
                 'aggregate' => [
@@ -2067,6 +2113,38 @@ class BuilderTest extends TestCase
         $this->expectExceptionMessage('A query carrying relationship aggregate stages cannot delete or update documents.');
 
         $builder->update(['name' => 'foo']);
+    }
+
+    public function testPipelineStagesOfANestedQueryCannotBeUsedToDelete(): void
+    {
+        $builder = $this->getBuilder()->where(function (Builder $outer): void {
+            $outer->where(function (Builder $inner): void {
+                $inner->where('active', true)->addPipelineStage(['$lookup' => ['from' => 'bar']]);
+            });
+        });
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('A query carrying relationship aggregate stages cannot delete or update documents.');
+
+        $builder->delete();
+    }
+
+    public function testPipelineStagesOfANestedQueryAreNotDuplicatedByRecompilation(): void
+    {
+        $builder = $this->getBuilder()->where(function (Builder $query): void {
+            $query->where('active', true)->addPipelineStage(['$lookup' => ['from' => 'books', 'as' => '__rel_books']]);
+        });
+
+        $first = $builder->toMql();
+
+        $this->assertSame(
+            [
+                ['$match' => ['active' => true]],
+                ['$lookup' => ['from' => 'books', 'as' => '__rel_books']],
+            ],
+            $first['aggregate'][0],
+        );
+        $this->assertSame($first, $builder->toMql());
     }
 
     #[DataProvider('getEloquentMethodsNotSupported')]
