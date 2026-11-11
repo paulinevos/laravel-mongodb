@@ -14,6 +14,8 @@ use MongoDB\Laravel\Tests\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\TestWith;
 
+use function array_keys;
+use function preg_grep;
 use function sprintf;
 
 class RelationAggregateTest extends TestCase
@@ -346,6 +348,132 @@ class RelationAggregateTest extends TestCase
         $this->expectExceptionMessage('An "offset()" on a relationship aggregate constraint is not supported.');
 
         User::orderByRelationAggregate('items', 'amount', 'sum', 'desc', fn ($query) => $query->offset(1));
+    }
+
+    #[DataProvider('provideWhereRelationAggregate')]
+    public function testWhereRelationAggregate(string $function, string $column, string $operator, int|float $value, array $expected): void
+    {
+        $this->seedUsers();
+
+        $names = User::whereRelationAggregate('items', $column, $function, $operator, $value)
+            ->orderBy('name')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame($expected, $names);
+    }
+
+    public static function provideWhereRelationAggregate(): iterable
+    {
+        yield 'count at least' => ['count', '*', '>=', 2, ['Alice', 'Bob']];
+        yield 'count none' => ['count', '*', '=', 0, ['Carol']];
+        yield 'count not' => ['count', '*', '!=', 2, ['Alice', 'Carol']];
+        yield 'sum above' => ['sum', 'amount', '>', 15, ['Bob']];
+        yield 'avg below' => ['avg', 'amount', '<', 6, ['Alice']];
+        yield 'min at most' => ['min', 'amount', '<=', 4, ['Alice']];
+        yield 'max equal float' => ['max', 'amount', '=', 10.0, ['Bob']];
+        yield 'exists' => ['exists', '*', '=', 1, ['Alice', 'Bob']];
+    }
+
+    public function testWhereRelationAggregateConstrainsTheRelatedQuery(): void
+    {
+        $this->seedUsers();
+
+        $names = User::whereRelationAggregate(
+            'items',
+            '*',
+            'count',
+            '>=',
+            2,
+            fn ($query) => $query->where('amount', '>=', 5),
+        )
+            ->orderBy('name')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Alice', 'Bob'], $names);
+    }
+
+    public function testWhereRelationAggregateComposesWithOrWhere(): void
+    {
+        $this->seedUsers();
+
+        $names = User::whereRelationAggregate('items', '*', 'count', '>=', 3)
+            ->orWhere('name', 'Carol')
+            ->orderBy('name')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Alice', 'Carol'], $names);
+    }
+
+    public function testWhereRelationAggregateComposesInsideANestedWhere(): void
+    {
+        $this->seedUsers();
+
+        $names = User::where('name', '!=', 'Alice')
+            ->where(fn ($query) => $query
+                ->whereRelationAggregate('items', 'amount', 'sum', '>', 15)
+                ->orWhere(fn ($inner) => $inner->whereRelationAggregate('items', '*', 'count', '=', 0)))
+            ->orderBy('name')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Bob', 'Carol'], $names);
+    }
+
+    public function testWhereRelationAggregateCombinesWithAnOrderOnTheSameRelation(): void
+    {
+        $this->seedUsers();
+
+        $names = User::whereRelationAggregate('items', '*', 'count', '>=', 2)
+            ->orderByRelationAggregate('items', 'amount', 'sum', 'desc')
+            ->get()
+            ->pluck('name')
+            ->all();
+
+        $this->assertSame(['Bob', 'Alice'], $names);
+    }
+
+    public function testPaginationCountsOnlyTheParentsMatchingTheAggregate(): void
+    {
+        $this->seedUsers();
+
+        $page = User::whereRelationAggregate('items', '*', 'count', '>=', 2)
+            ->orderBy('name')
+            ->paginate(1);
+
+        $this->assertSame(2, $page->total());
+        $this->assertSame(['Alice'], $page->pluck('name')->all());
+    }
+
+    public function testTheAggregateFieldIsNotHydratedOnTheModels(): void
+    {
+        $this->seedUsers();
+
+        $user = User::whereRelationAggregate('items', '*', 'count', '>=', 3)->firstOrFail();
+
+        $this->assertSame([], preg_grep('/^__/', array_keys($user->getAttributes())));
+    }
+
+    public function testWhereRelationAggregateUnsupportedOperator(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Comparison operator "like" is not supported on a relation aggregate. Supported operators are: =, !=, <>, <, <=, >, >=.');
+
+        User::whereRelationAggregate('items', '*', 'count', 'like', 1);
+    }
+
+    public function testWhereRelationAggregateUnsupportedFunction(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Aggregate function "median" is not supported by MongoDB.');
+
+        User::whereRelationAggregate('items', 'amount', 'median', '>', 1);
     }
 
     private function seedUsers(): void

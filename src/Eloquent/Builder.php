@@ -200,6 +200,22 @@ class Builder extends EloquentBuilder
         return $this;
     }
 
+    /** Supports the Filament bridge. */
+    public function whereRelationAggregate(
+        string $relation,
+        string $column,
+        string $function,
+        string $operator,
+        float $value,
+        ?Closure $callback = null,
+    ): static {
+        RelationAggregate::assertComparisonOperator($operator);
+
+        $field = $this->addRelationAggregateField($relation, $column, $function, $callback);
+
+        return $this->where($field, $operator, $value);
+    }
+
     private function addRelationAggregateField(
         string $relation,
         string $column,
